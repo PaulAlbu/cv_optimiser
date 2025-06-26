@@ -4,6 +4,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.fit.pdfdom.PDFDomTree;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +18,12 @@ import java.io.*;
 @RestController
 
 public class UploadCvController {
+    private final ChatClient chatClient;
     private static final Log logger = LogFactory.getLog(UploadCvController.class);
+
+    public UploadCvController(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
+    }
 
     @PostMapping(path = "/uploadcv", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
     public ResponseEntity<?> handleCvUpload(@RequestParam("cv") MultipartFile cv) throws IOException {
@@ -25,9 +31,30 @@ public class UploadCvController {
         String htmlFIleName = String.format("/Users/paulioanalbu/Downloads/testcv/%s.html", cvName);
 
         try(PDDocument pdf = PDDocument.load(cv.getInputStream());
-            Writer output = new PrintWriter(htmlFIleName, "utf-8")) {
+            StringWriter output = new StringWriter()) {
 
             new PDFDomTree().writeText(pdf, output);
+            String htmlContent = output.toString();
+
+            String messageToAi = "This is part of the an HR JD: " + new JdTEst().getJd() +
+                    "Update this CV experience with the above key areas from the JD \n" + htmlContent;
+            String systemMessage = """
+You are an AI that edits CV HTML. You MUST NOT:
+- Add any extra text (no explanations, greetings, apologies).
+- Change formatting or annotations—only modify text content.
+- Ask any fllow-up questions
+Output EXACTLY one HTML block (<html>…</html>) with the edited CV.
+Respond ONLY with the HTML and nothing else, wrapped in a single ```html ... ``` code block.
+""";
+            var response = chatClient.prompt()
+                    .system(systemMessage)
+                    .user(messageToAi)
+                    .call()
+                    .content();
+
+
+            System.out.println(response);
+
             cv.transferTo(new File("/Users/paulioanalbu/Downloads/testcv/" + cvName));
             //TODO:
             // check how can we transform the HTML file to a string and then feed it to
